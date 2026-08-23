@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.spec
+CuteMute.ico
+preview*.png

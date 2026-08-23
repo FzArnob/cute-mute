@@ -1,0 +1,5 @@
+# CuteMute has no runtime dependencies: stdlib Python plus direct Win32/COM
+# calls through ctypes. Nothing to install to run it.
+#
+# Only needed to produce CuteMute.exe:
+pyinstaller>=6.0
