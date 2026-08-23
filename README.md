@@ -9,6 +9,7 @@ muted or *accidentally* live.
 - **Settings save themselves** as you touch them, and take effect at once
 - **Runs in the tray** once you close the window, no console window, no
   measurable CPU when idle
+- **Registers itself** on first run: Start menu, Search, Win+R, Installed apps
 - **No third-party dependencies** — stdlib Python plus direct Win32/COM calls
 
 ---
@@ -36,6 +37,20 @@ the notification area: green mic = live, red slashed mic = muted.
 The tray menu is four items — Open, Mute Microphone, Start with Windows,
 Exit CuteMute — painted in the app's palette rather than the system's.
 
+The first run also puts CuteMute where Windows looks for programs, so you can
+find it by typing *cute* into Start instead of hunting for the exe:
+
+| Where | What goes there |
+| --- | --- |
+| Start menu and Search | `%APPDATA%\...\Start Menu\Programs\CuteMute.lnk` |
+| Win+R, and `start cutemute` | the per-user `App Paths` key |
+| Settings → Installed apps | name, version, publisher, and an uninstall entry |
+
+All three are per-user, need no admin rights, and are rewritten only when the
+exe moves or the version changes. `CuteMute.exe --uninstall` takes them back
+out, along with the run-at-login entry and the saved settings; the exe itself
+stays put, because a running program cannot delete its own file.
+
 ### Building CuteMute.exe
 
 ```powershell
@@ -45,7 +60,34 @@ python -m pip install pyinstaller
 ```
 
 `build.ps1` regenerates `CuteMute.ico` from the same code that draws the badge,
-so the exe, the tray and the overlay never drift apart.
+so the exe, the tray and the overlay never drift apart. It also generates the
+version resource from `cutemute/__init__.py`, which is what fills in the
+Properties dialog — description, product, version, company, copyright — and
+the name Task Manager and UAC show for the process.
+
+### Signing, and "unknown publisher"
+
+A full version resource is not a signature. Windows will still call the
+publisher unknown, and SmartScreen will still warn on a freshly copied exe,
+until the file carries an Authenticode signature:
+
+```powershell
+.\build.ps1 -Certificate mycert.pfx     # or a cert thumbprint from your store
+```
+
+That signs and timestamps the exe with a certificate you supply. What each
+kind buys you:
+
+| Certificate | Effect |
+| --- | --- |
+| none | "Unknown publisher", SmartScreen prompt on other machines |
+| self-signed | clean only on machines that trust your certificate |
+| OV, from a CA | named publisher; SmartScreen quiets down as reputation builds |
+| EV or Azure Trusted Signing | trusted immediately, no reputation to build |
+
+Antivirus false positives on PyInstaller one-file builds are common and are
+not about your code; a signature and Microsoft's false-positive form are the
+two things that actually help.
 
 To start it with Windows, tick **Start CuteMute with Windows** in the window or
 in the tray menu. It writes the per-user `Run` key — no admin rights, no
@@ -58,6 +100,7 @@ scheduled task — with `--tray`, so logging in does not pop the window open.
 | *(none)* | show the window; closing it leaves CuteMute in the tray |
 | `--tray` | start straight into the tray — what run-at-login uses |
 | `--toggle` | toggle mute once and exit — for binding from other tools |
+| `--uninstall` | remove those entries and the settings, then exit |
 | `--selftest` | start up, print diagnostics, flash the badge, exit |
 | `--version` | print the version |
 
@@ -233,9 +276,11 @@ cutemute/
   keys.py         virtual-key names, modifier state
   config.py       %APPDATA% JSON settings
   startup.py      run-at-login registry entry
+  install.py      Start menu, Win+R and Installed apps entries
   w32.py          the Win32 ctypes bindings everything else uses
 tools/
   make_ico.py     build CuteMute.ico from iconart
+  make_version.py the version resource stamped into the exe
   preview_icon.py render a PNG contact sheet of the badge
 CuteMute.pyw      console-free entry point
 build.ps1         PyInstaller build

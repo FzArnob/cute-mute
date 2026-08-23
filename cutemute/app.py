@@ -19,16 +19,17 @@ import queue
 import sys
 import threading
 
-from . import config, keys, startup
+from . import APP_NAME, PUBLISHER, __version__, config, install, keys, startup
 from .audio import AudioService, COINIT_MULTITHREADED, MicMute
 from .hotkey import HotkeyListener
 from .settings_ui import SettingsWindow
 from .tray import CLASS_NAME as TRAY_CLASS
-from .w32 import ERROR_ALREADY_EXISTS, kernel32, ole32, set_dpi_awareness, user32
+from .w32 import (ERROR_ALREADY_EXISTS, IDYES, MB_ICONINFORMATION,
+                  MB_ICONQUESTION, MB_OK, MB_SETFOREGROUND, MB_YESNO,
+                  kernel32, ole32, set_dpi_awareness, user32)
 from .winui import WinUI
 
 MUTEX_NAME = "Local\\CuteMute-single-instance"
-APP_VERSION = "1.0"
 
 
 class SingleInstance:
@@ -52,6 +53,36 @@ def _poke_existing_instance():
         user32.PostMessageW(hwnd, msg, 0, 0)
         return True
     return False
+
+
+def _uninstall():
+    """--uninstall: take back everything install.register() did, then exit.
+
+    This is what Settings > Apps runs, and a windowed exe has nowhere to print,
+    so the question and the answer are both message boxes.
+    """
+    question = (
+        "Remove %s's Start menu entry, its Win+R name, its Installed apps "
+        "entry, its run-at-login entry and its saved settings?\n\n"
+        "The program file itself stays where it is - delete\n%s\nyourself if "
+        "you no longer want it." % (APP_NAME, sys.executable))
+    if user32.MessageBoxW(None, question, "Uninstall %s" % APP_NAME,
+                          MB_YESNO | MB_ICONQUESTION
+                          | MB_SETFOREGROUND) != IDYES:
+        return 0
+
+    removed = install.unregister()
+    if removed:
+        told = "Removed:\n\n" + "\n".join("    \u2022 %s" % item
+                                           for item in removed)
+    else:
+        told = "There was nothing left to remove."
+    if user32.FindWindowW(TRAY_CLASS, None):
+        told += ("\n\n%s is still running: right-click its tray icon and "
+                 "choose Exit %s." % (APP_NAME, APP_NAME))
+    user32.MessageBoxW(None, told, "Uninstall %s" % APP_NAME,
+                       MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND)
+    return 0
 
 
 def _one_shot_toggle():
@@ -176,6 +207,10 @@ class App:
     # -- run ---------------------------------------------------------------
     def run(self):
         set_dpi_awareness()
+        if not self.selftest:
+            # Cheap and idempotent: it writes something only on the first
+            # run, or after the exe has moved or been replaced.
+            install.register()
 
         self.audio.start()
         self.winui.start()
@@ -213,7 +248,7 @@ class App:
 
     def _selftest(self):
         import time
-        print("CuteMute %s self-test" % APP_VERSION)
+        print("%s %s self-test" % (APP_NAME, __version__))
         print("  hotkey        : %s (suppress=%s)"
               % (self._hotkey_text(), self.cfg["hotkey"]["suppress"]))
         print("  hook          : %s"
@@ -224,6 +259,10 @@ class App:
               % (self.cfg["overlay"]["size"], self.cfg["overlay"]["corner"],
                  self.cfg["overlay"]["margin"], self.cfg["overlay"]["opacity"]))
         print("  config        : %s" % config.config_path())
+        print("  publisher     : %s" % PUBLISHER)
+        print("  start menu    : %s"
+              % ("registered" if install.is_registered()
+                 else "not registered"))
         print("  mic muted     : %s" % self._muted)
         print("showing the badge for 3s without touching the mic...")
         self.winui.set_muted(True)
@@ -252,11 +291,18 @@ def main(argv=None):
                              "(this is what the run-at-login entry uses)")
     parser.add_argument("--toggle", action="store_true",
                         help="toggle mute once and exit (no tray icon)")
+    parser.add_argument("--uninstall", action="store_true",
+                        help="remove the Start menu, Win+R, Installed "
+                             "apps and run-at-login entries, and the "
+                             "saved settings")
     parser.add_argument("--selftest", action="store_true",
                         help="start up, report diagnostics, show the badge, exit")
     parser.add_argument("--version", action="version",
-                        version="CuteMute %s" % APP_VERSION)
+                        version="%s %s" % (APP_NAME, __version__))
     args = parser.parse_args(argv)
+
+    if args.uninstall:
+        return _uninstall()
 
     if args.toggle:
         return _one_shot_toggle()

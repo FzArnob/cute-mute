@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-APP_NAME = "CuteMute"
+from . import APP_NAME
 
 DEFAULTS = {
     "hotkey": {

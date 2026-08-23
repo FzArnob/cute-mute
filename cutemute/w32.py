@@ -247,6 +247,17 @@ SM_CYSMICON = 50
 
 ERROR_ALREADY_EXISTS = 183
 
+COM_RELEASE = 2             # IUnknown::Release, slot 2 of every vtable
+CLSCTX_INPROC_SERVER = 0x1
+COINIT_APARTMENTTHREADED = 0x2
+
+MB_YESNO = 0x0004
+MB_OK = 0x0000
+MB_ICONQUESTION = 0x0020
+MB_ICONINFORMATION = 0x0040
+MB_SETFOREGROUND = 0x00010000
+IDYES = 6
+
 # ---------------------------------------------------------------- prototypes
 
 user32.DefWindowProcW.restype = LRESULT
@@ -319,6 +330,9 @@ user32.TrackPopupMenu.restype = ctypes.c_int
 user32.TrackPopupMenu.argtypes = [HMENU, wintypes.UINT, ctypes.c_int, ctypes.c_int,
                                   ctypes.c_int, wintypes.HWND, ctypes.c_void_p]
 user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+user32.MessageBoxW.restype = ctypes.c_int
+user32.MessageBoxW.argtypes = [wintypes.HWND, wintypes.LPCWSTR,
+                               wintypes.LPCWSTR, wintypes.UINT]
 user32.SendMessageW.restype = LRESULT
 user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT,
                                 wintypes.WPARAM, wintypes.LPARAM]
@@ -390,6 +404,26 @@ kernel32.GetCurrentThreadId.restype = wintypes.DWORD
 kernel32.CreateMutexW.restype = HANDLE
 kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
 kernel32.CloseHandle.argtypes = [HANDLE]
+
+
+def com_call(ptr, slot, *argtypes):
+    """Bind vtable[slot] of a COM interface pointer as a callable.
+
+    The callable takes the interface pointer as its first argument, so a call
+    reads like the C++ one: com_call(link, SETPATH, c_wchar_p)(link, path).
+    """
+    vtable = ctypes.cast(ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))
+    proto = ctypes.WINFUNCTYPE(ctypes.HRESULT, ctypes.c_void_p, *argtypes)
+    return proto(vtable.contents[slot])
+
+
+def com_release(ptr):
+    if ptr and ptr.value:
+        vtable = ctypes.cast(ptr,
+                             ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))
+        ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)(
+            vtable.contents[COM_RELEASE])(ptr)
+        ptr.value = None
 
 
 def set_dpi_awareness():

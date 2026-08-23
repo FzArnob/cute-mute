@@ -14,7 +14,7 @@ import threading
 from ctypes import POINTER, byref, c_uint, c_void_p, c_wchar_p
 from ctypes import wintypes
 
-from .w32 import GUID, ole32
+from .w32 import GUID, com_call as _call, com_release as _release, ole32
 
 CLSID_MMDeviceEnumerator = "{BCDE0395-E52F-467C-8E3D-C4579291692E}"
 IID_IMMDeviceEnumerator = "{A95664D2-9614-4F35-A746-DE8DB63617E6}"
@@ -29,7 +29,6 @@ ROLE_COMMUNICATIONS = 2
 DEVICE_STATE_ACTIVE = 0x1
 
 # vtable slots (IUnknown occupies 0..2 in every interface)
-RELEASE = 2
 ENUM_ENUMAUDIOENDPOINTS = 3
 ENUM_GETDEFAULTENDPOINT = 4
 COLL_GETCOUNT = 3
@@ -38,20 +37,6 @@ DEV_ACTIVATE = 3
 DEV_GETID = 5
 VOL_SETMUTE = 14
 VOL_GETMUTE = 15
-
-
-def _call(ptr, slot, *argtypes):
-    """Bind vtable[slot] of a COM interface pointer as a callable."""
-    vtable = ctypes.cast(ptr, POINTER(POINTER(c_void_p))).contents
-    proto = ctypes.WINFUNCTYPE(ctypes.HRESULT, c_void_p, *argtypes)
-    return proto(vtable[slot])
-
-
-def _release(ptr):
-    if ptr and ptr.value:
-        ctypes.WINFUNCTYPE(ctypes.c_ulong, c_void_p)(
-            ctypes.cast(ptr, POINTER(POINTER(c_void_p))).contents[RELEASE])(ptr)
-        ptr.value = None
 
 
 class MicMute:

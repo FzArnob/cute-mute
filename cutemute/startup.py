@@ -7,20 +7,29 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 VALUE_NAME = "CuteMute"
 
 
-def launch_command():
-    """Command line that starts CuteMute without a console window.
+def launch_parts(tray=True):
+    """(program, arguments) that start CuteMute without a console window.
 
-    With --tray, because logging in is not a request to see the settings.
+    The Run key and the Start menu shortcut want the same two strings, and they
+    differ in one thing only: logging in is not a request to see the settings,
+    so that one gets --tray and the shortcut you clicked does not.
     """
+    flag = " --tray" if tray else ""
     if getattr(sys, "frozen", False):
-        return '"%s" --tray' % sys.executable
+        return sys.executable, flag.lstrip()
     interpreter = sys.executable
     windowed = os.path.join(os.path.dirname(interpreter), "pythonw.exe")
     if os.path.exists(windowed):
         interpreter = windowed
     entry = os.path.join(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))), "CuteMute.pyw")
-    return '"%s" "%s" --tray' % (interpreter, entry)
+    return interpreter, '"%s"%s' % (entry, flag)
+
+
+def launch_command():
+    """One command line for the per-user Run key."""
+    program, arguments = launch_parts()
+    return '"%s" %s' % (program, arguments) if arguments else '"%s"' % program
 
 
 def is_enabled():
