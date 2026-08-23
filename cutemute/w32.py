@@ -4,6 +4,7 @@ Everything here is stdlib-only on purpose: no pywin32, no comtypes, no Pillow.
 That keeps the frozen exe small and the idle footprint tiny.
 """
 import ctypes
+import sys
 from ctypes import wintypes
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -57,6 +58,32 @@ class WNDCLASSEXW(ctypes.Structure):
                 ("lpszMenuName", wintypes.LPCWSTR),
                 ("lpszClassName", wintypes.LPCWSTR),
                 ("hIconSm", HICON)]
+
+
+class MENUINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("fMask", wintypes.DWORD),
+                ("dwStyle", wintypes.DWORD), ("cyMax", wintypes.UINT),
+                ("hbrBack", HANDLE), ("dwContextHelpID", wintypes.DWORD),
+                ("dwMenuData", ctypes.c_void_p)]
+
+
+class MEASUREITEMSTRUCT(ctypes.Structure):
+    _fields_ = [("CtlType", wintypes.UINT), ("CtlID", wintypes.UINT),
+                ("itemID", wintypes.UINT), ("itemWidth", wintypes.UINT),
+                ("itemHeight", wintypes.UINT), ("itemData", ctypes.c_void_p)]
+
+
+class DRAWITEMSTRUCT(ctypes.Structure):
+    _fields_ = [("CtlType", wintypes.UINT), ("CtlID", wintypes.UINT),
+                ("itemID", wintypes.UINT), ("itemAction", wintypes.UINT),
+                ("itemState", wintypes.UINT), ("hwndItem", wintypes.HWND),
+                ("hDC", wintypes.HDC), ("rcItem", wintypes.RECT),
+                ("itemData", ctypes.c_void_p)]
+
+
+class MARGINS(ctypes.Structure):
+    _fields_ = [("cxLeftWidth", ctypes.c_int), ("cxRightWidth", ctypes.c_int),
+                ("cyTopHeight", ctypes.c_int), ("cyBottomHeight", ctypes.c_int)]
 
 
 class BLENDFUNCTION(ctypes.Structure):
@@ -179,12 +206,28 @@ NIF_MESSAGE = 0x01
 NIF_ICON = 0x02
 NIF_TIP = 0x04
 
-MF_STRING = 0x0000
-MF_SEPARATOR = 0x0800
-MF_CHECKED = 0x0008
-MF_UNCHECKED = 0x0000
+MF_OWNERDRAW = 0x0100
+MF_BYCOMMAND = 0x0000
+MIM_BACKGROUND = 0x00000002
 TPM_RIGHTBUTTON = 0x0002
 TPM_RETURNCMD = 0x0100
+
+WM_DRAWITEM = 0x002B
+WM_MEASUREITEM = 0x002C
+ODS_SELECTED = 0x0001
+ODS_DEFAULT = 0x0020
+
+DT_LEFT = 0x0000
+DT_RIGHT = 0x0002
+DT_VCENTER = 0x0004
+DT_SINGLELINE = 0x0020
+DT_NOPREFIX = 0x0800
+TRANSPARENT = 1
+FW_NORMAL = 400
+FW_SEMIBOLD = 600
+DEFAULT_CHARSET = 1
+CLEARTYPE_QUALITY = 5
+PS_SOLID = 0
 
 MONITOR_DEFAULTTOPRIMARY = 1
 
@@ -192,6 +235,12 @@ WM_SETICON = 0x0080
 ICON_SMALL = 0
 ICON_BIG = 1
 GA_ROOT = 2
+
+GWL_EXSTYLE = -20
+WS_EX_APPWINDOW = 0x00040000
+SW_MINIMIZE = 6
+DWMWA_WINDOW_CORNER_PREFERENCE = 33
+DWMWCP_ROUND = 2
 
 SM_CXSMICON = 49
 SM_CYSMICON = 50
@@ -276,6 +325,18 @@ user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT,
 user32.GetAncestor.restype = wintypes.HWND
 user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
 
+user32.GetWindowLongW.restype = wintypes.LONG
+user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.SetWindowLongW.restype = wintypes.LONG
+user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
+user32.SetMenuDefaultItem.argtypes = [HMENU, wintypes.UINT, wintypes.UINT]
+user32.SetMenuDefaultItem.restype = wintypes.BOOL
+user32.SetMenuInfo.argtypes = [HMENU, ctypes.POINTER(MENUINFO)]
+user32.FillRect.argtypes = [wintypes.HDC, ctypes.POINTER(wintypes.RECT), HANDLE]
+user32.DrawTextW.restype = ctypes.c_int
+user32.DrawTextW.argtypes = [wintypes.HDC, wintypes.LPCWSTR, ctypes.c_int,
+                             ctypes.POINTER(wintypes.RECT), wintypes.UINT]
+
 gdi32.CreateCompatibleDC.restype = wintypes.HDC
 gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
 gdi32.DeleteDC.argtypes = [wintypes.HDC]
@@ -289,6 +350,24 @@ gdi32.CreateBitmap.argtypes = [ctypes.c_int, ctypes.c_int, wintypes.UINT,
 gdi32.SelectObject.restype = HANDLE
 gdi32.SelectObject.argtypes = [wintypes.HDC, HANDLE]
 gdi32.DeleteObject.argtypes = [HANDLE]
+
+gdi32.CreateSolidBrush.restype = HANDLE
+gdi32.CreateSolidBrush.argtypes = [wintypes.COLORREF]
+gdi32.CreateRoundRectRgn.restype = HANDLE
+gdi32.CreateRoundRectRgn.argtypes = [ctypes.c_int] * 6
+gdi32.FillRgn.argtypes = [wintypes.HDC, HANDLE, HANDLE]
+gdi32.SetBkMode.argtypes = [wintypes.HDC, ctypes.c_int]
+gdi32.SetTextColor.restype = wintypes.COLORREF
+gdi32.SetTextColor.argtypes = [wintypes.HDC, wintypes.COLORREF]
+gdi32.CreateFontW.restype = HANDLE
+gdi32.CreateFontW.argtypes = [ctypes.c_int] * 8 + [wintypes.DWORD] * 5 + [
+    wintypes.LPCWSTR]
+gdi32.CreatePen.restype = HANDLE
+gdi32.CreatePen.argtypes = [ctypes.c_int, ctypes.c_int, wintypes.COLORREF]
+gdi32.Polyline.argtypes = [wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+                           ctypes.c_int]
+gdi32.GetTextExtentPoint32W.argtypes = [wintypes.HDC, wintypes.LPCWSTR,
+                                        ctypes.c_int, ctypes.POINTER(SIZE)]
 
 shell32.Shell_NotifyIconW.restype = wintypes.BOOL
 shell32.Shell_NotifyIconW.argtypes = [wintypes.DWORD, ctypes.POINTER(NOTIFYICONDATAW)]
@@ -330,6 +409,68 @@ def set_dpi_awareness():
         user32.SetProcessDPIAware()
     except Exception:
         pass
+
+
+def make_frameless(hwnd):
+    """Give a borderless window back what a frame would have granted it.
+
+    The settings window draws its own title bar, because Windows insists on
+    showing a (greyed out) maximise button beside the minimise one and there is
+    no style that says "minimise and close only". So the frame goes, and with
+    it the taskbar button, Alt+Tab entry and rounded corners - all three are
+    asked for again here.
+    """
+    ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+    user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex | WS_EX_APPWINDOW)
+    round_corners(hwnd)
+    try:
+        dwmapi = ctypes.WinDLL("dwmapi")
+    except OSError:
+        return
+    # One pixel of frame is enough for DWM to draw the border and shadow that
+    # tell the panel apart from whatever is behind it.
+    dwmapi.DwmExtendFrameIntoClientArea(wintypes.HWND(hwnd),
+                                        ctypes.byref(MARGINS(0, 0, 1, 0)))
+
+
+def round_corners(hwnd):
+    """Windows 11 rounded corners, for a window that is not getting them."""
+    try:
+        dwmapi = ctypes.WinDLL("dwmapi")
+    except OSError:
+        return
+    preference = ctypes.c_int(DWMWCP_ROUND)
+    dwmapi.DwmSetWindowAttribute(wintypes.HWND(hwnd),
+                                 wintypes.DWORD(DWMWA_WINDOW_CORNER_PREFERENCE),
+                                 ctypes.byref(preference),
+                                 ctypes.sizeof(preference))
+
+
+def allow_dark_menus():
+    """Put this process in uxtheme's dark mode, so menus come up dark.
+
+    SetPreferredAppMode has no header and no name in uxtheme's export table -
+    it is ordinal 135 - but it is what every dark Win32 app calls and has been
+    there since Windows 10 1809, which is why the build is checked first. The
+    worst case if Microsoft ever moves it is a light frame around our dark
+    menu items, so failure is quietly acceptable here.
+    """
+    try:
+        if sys.getwindowsversion().build < 17763:
+            return
+        uxtheme = ctypes.WinDLL("uxtheme")
+        set_preferred_app_mode = uxtheme[135]
+        set_preferred_app_mode.argtypes = [ctypes.c_int]
+        set_preferred_app_mode.restype = ctypes.c_int
+        set_preferred_app_mode(2)               # ForceDark
+        uxtheme[136]()                          # FlushMenuThemes
+    except Exception:
+        pass
+
+
+def minimise(hwnd):
+    """Tk refuses to iconify an override-redirect window; Windows does not."""
+    user32.ShowWindow(hwnd, SW_MINIMIZE)
 
 
 def system_dpi():

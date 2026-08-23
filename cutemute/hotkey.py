@@ -10,6 +10,7 @@ queue. That matters: if a low-level hook takes longer than
 LowLevelHooksTimeout (300 ms by default) Windows silently unhooks it.
 """
 import ctypes
+import sys
 import threading
 
 from . import keys
@@ -19,6 +20,19 @@ from .w32 import (HOOKPROC, KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN,
 
 _DOWN = (WM_KEYDOWN, WM_SYSKEYDOWN)
 _UP = (WM_KEYUP, WM_SYSKEYUP)
+
+
+def _report(callback, vk, mods, cancelled):
+    """Hand a captured chord over, off the hook thread and out loud.
+
+    A bare Thread(target=callback) swallows any mistake in the callback into a
+    dead thread, and the symptom is a hotkey that silently refuses to change.
+    """
+    try:
+        callback(vk, mods, cancelled)
+    except Exception as exc:
+        print("CuteMute (hotkey): could not report the captured key: %s" % exc,
+              file=sys.stderr)
 
 
 class HotkeyListener(threading.Thread):
@@ -49,7 +63,8 @@ class HotkeyListener(threading.Thread):
             self._latched = False
 
     def capture_next(self, callback):
-        """Report the next real chord to `callback` instead of toggling."""
+        """Report the next chord to `callback(vk, mods, cancelled)`, once,
+        instead of toggling. Called from the hook thread."""
         with self._lock:
             self._capture_cb = callback
 
@@ -113,7 +128,8 @@ class HotkeyListener(threading.Thread):
                     sorted(keys.held_modifiers(exclude_vk=vk)))
                 cancelled = vk == keys.VK_ESCAPE
                 # Swallow the capture keystroke so it cannot leak into the UI.
-                threading.Thread(target=capture_cb, args=(vk, mods, cancelled),
+                threading.Thread(target=_report,
+                                 args=(capture_cb, vk, mods, cancelled),
                                  daemon=True).start()
                 return True
 

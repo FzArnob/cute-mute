@@ -8,16 +8,19 @@ VALUE_NAME = "CuteMute"
 
 
 def launch_command():
-    """Command line that starts CuteMute without a console window."""
+    """Command line that starts CuteMute without a console window.
+
+    With --tray, because logging in is not a request to see the settings.
+    """
     if getattr(sys, "frozen", False):
-        return '"%s"' % sys.executable
+        return '"%s" --tray' % sys.executable
     interpreter = sys.executable
     windowed = os.path.join(os.path.dirname(interpreter), "pythonw.exe")
     if os.path.exists(windowed):
         interpreter = windowed
     entry = os.path.join(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))), "CuteMute.pyw")
-    return '"%s" "%s"' % (interpreter, entry)
+    return '"%s" "%s" --tray' % (interpreter, entry)
 
 
 def is_enabled():

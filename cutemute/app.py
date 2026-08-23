@@ -3,7 +3,8 @@
 Four threads, all of them blocked on something the kernel wakes them for, so an
 idle CuteMute costs no measurable CPU:
 
-  main         waits on a queue; only builds a Tk window when asked to
+  main         waits on a queue; builds a Tk window when asked to, and is
+               asked to as soon as CuteMute starts unless --tray says not to
   CuteMute-winui   one Win32 message pump for the badge and the tray icon
   CuteMute-hotkey  the low-level keyboard hook, kept deliberately empty
   CuteMute-audio   owns the COM apartment and does all mute work
@@ -44,7 +45,7 @@ class SingleInstance:
 
 
 def _poke_existing_instance():
-    """Ask the running copy to show its settings window, then step aside."""
+    """Ask the running copy to show its window, then step aside."""
     hwnd = user32.FindWindowW(TRAY_CLASS, None)
     if hwnd:
         msg = user32.RegisterWindowMessageW("CuteMute.ShowSettings")
@@ -154,6 +155,13 @@ class App:
             self._remember_settings_hwnd(None)
 
     def _apply(self, updates):
+        """Take a settings dict, persist it, and push it into everything live.
+
+        Called on every change now that the settings window saves as you touch
+        it, so it does no work it does not have to: the registry is only written
+        when the run-at-login flag actually moved.
+        """
+        was_startup = bool(self.cfg.get("start_with_windows"))
         saved = config.save(updates)
         # Mutate in place: the tray holds a reference to this same dict.
         self.cfg.clear()
@@ -162,7 +170,8 @@ class App:
                                saved["hotkey"]["suppress"])
         self.audio.set_options(saved["audio"]["mute_all_inputs"])
         self.winui.apply(self.cfg)
-        startup.set_enabled(saved["start_with_windows"])
+        if saved["start_with_windows"] != was_startup:
+            startup.set_enabled(saved["start_with_windows"])
 
     # -- run ---------------------------------------------------------------
     def run(self):
@@ -238,8 +247,9 @@ def main(argv=None):
         prog="CuteMute",
         description="Mute your microphone with one keypress, with an "
                     "always-on-top badge while muted.")
-    parser.add_argument("--settings", action="store_true",
-                        help="open the settings window on start")
+    parser.add_argument("--tray", action="store_true",
+                        help="start straight into the tray, without the window "
+                             "(this is what the run-at-login entry uses)")
     parser.add_argument("--toggle", action="store_true",
                         help="toggle mute once and exit (no tray icon)")
     parser.add_argument("--selftest", action="store_true",
@@ -260,8 +270,10 @@ def main(argv=None):
 
     try:
         app = App(selftest=args.selftest)
-        if args.settings:
-            app._mainq.put(("settings",))
+        # Running CuteMute means showing it; closing the window leaves it in
+        # the tray. Only --tray (and a self-test) start out of sight.
+        if not args.tray and not args.selftest:
+            app.request_settings()
         return app.run()
     finally:
         instance.release()

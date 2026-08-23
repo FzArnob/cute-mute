@@ -6,13 +6,14 @@ open, and a blocked low-level keyboard hook gets torn down by Windows.
 """
 import ctypes
 import threading
-from ctypes import byref, wintypes
+from ctypes import byref
 
-from .w32 import (MF_CHECKED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, NIF_ICON,
-                  NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
-                  NOTIFYICONDATAW, SM_CXSMICON, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-                  WM_APP, WM_COMMAND, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NULL,
-                  WM_RBUTTONUP, WNDCLASSEXW, WNDPROC, kernel32, shell32, user32)
+from .menu import DarkMenu, Item
+from .w32 import (NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE,
+                  NIM_MODIFY, NOTIFYICONDATAW, SM_CXSMICON, WM_APP, WM_COMMAND,
+                  WM_DRAWITEM, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_MEASUREITEM,
+                  WM_RBUTTONUP, WNDCLASSEXW, WNDPROC, allow_dark_menus,
+                  kernel32, shell32, user32)
 from .winicon import destroy_hicon, make_hicon
 
 CLASS_NAME = "CuteMuteTray"
@@ -21,10 +22,13 @@ WINDOW_TITLE = "CuteMute"
 WM_TRAY_CALLBACK = WM_APP + 20
 WM_TRAY_STATE = WM_APP + 21
 
-ID_TOGGLE = 1001
-ID_SETTINGS = 1002
+ID_OPEN = 1001
+ID_TOGGLE = 1002
 ID_STARTUP = 1003
 ID_EXIT = 1004
+
+COMMANDS = {ID_OPEN: "settings", ID_TOGGLE: "toggle", ID_STARTUP: "startup",
+            ID_EXIT: "exit"}
 
 ICON_UID = 1
 
@@ -39,6 +43,7 @@ class Tray:
         self._icons = {}
         self._muted = False
         self._added = False
+        self._menu = DarkMenu()
         self._proc = WNDPROC(self._wnd_proc)
         self._class_registered = False
         self._taskbar_created_msg = user32.RegisterWindowMessageW("TaskbarCreated")
@@ -54,6 +59,8 @@ class Tray:
 
     # -- UI thread ---------------------------------------------------------
     def create(self):
+        # Dark frame and shadow for the popup; the items we draw ourselves.
+        allow_dark_menus()
         hinstance = kernel32.GetModuleHandleW(None)
         cls = WNDCLASSEXW()
         cls.cbSize = ctypes.sizeof(WNDCLASSEXW)
@@ -85,6 +92,7 @@ class Tray:
         for handle in self._icons.values():
             destroy_hicon(handle)
         self._icons.clear()
+        self._menu.destroy()
         if self.hwnd:
             user32.DestroyWindow(self.hwnd)
             self.hwnd = None
@@ -130,45 +138,21 @@ class Tray:
             self._add()
 
     def _popup(self):
+        """The four things worth having on a right-click, and nothing else."""
         with self._lock:
             muted = self._muted
-        menu = user32.CreatePopupMenu()
-        if not menu:
-            return
-        try:
-            chord = self._hotkey_text()
-            label = "Unmute microphone" if muted else "Mute microphone"
-            if chord:
-                label = "%s\t%s" % (label, chord)
-            user32.AppendMenuW(menu, MF_STRING, ID_TOGGLE, label)
-            user32.AppendMenuW(menu, MF_SEPARATOR, 0, None)
-            user32.AppendMenuW(menu, MF_STRING, ID_SETTINGS, "Settings...")
-            user32.AppendMenuW(
-                menu, MF_STRING | (MF_CHECKED if self._cfg.get("start_with_windows")
-                                   else MF_UNCHECKED),
-                ID_STARTUP, "Start with Windows")
-            user32.AppendMenuW(menu, MF_SEPARATOR, 0, None)
-            user32.AppendMenuW(menu, MF_STRING, ID_EXIT, "Exit CuteMute")
-
-            point = wintypes.POINT()
-            user32.GetCursorPos(byref(point))
-            # Required so the menu dismisses properly when focus moves away.
-            user32.SetForegroundWindow(self.hwnd)
-            choice = user32.TrackPopupMenu(
-                menu, TPM_RIGHTBUTTON | TPM_RETURNCMD, point.x, point.y, 0,
-                self.hwnd, None)
-            user32.PostMessageW(self.hwnd, WM_NULL, 0, 0)
-        finally:
-            user32.DestroyMenu(menu)
-
-        if choice == ID_TOGGLE:
-            self._on_command("toggle")
-        elif choice == ID_SETTINGS:
-            self._on_command("settings")
-        elif choice == ID_STARTUP:
-            self._on_command("startup")
-        elif choice == ID_EXIT:
-            self._on_command("exit")
+        items = (
+            Item(ID_OPEN, "Open"),
+            Item(ID_TOGGLE, "Unmute Microphone" if muted
+                 else "Mute Microphone", self._hotkey_text()),
+            Item(ID_STARTUP, "Start with Windows", "",
+                 bool(self._cfg.get("start_with_windows"))),
+            Item(ID_EXIT, "Exit CuteMute"),
+        )
+        command = COMMANDS.get(self._menu.show(self.hwnd, items,
+                                               default=ID_OPEN))
+        if command:
+            self._on_command(command)
 
     def _wnd_proc(self, hwnd, msg, wparam, lparam):
         try:
@@ -186,6 +170,11 @@ class Tray:
                 return 0
             if msg == WM_COMMAND:
                 return 0
+            # The menu is owner-drawn, so its measuring and painting land here.
+            if msg == WM_MEASUREITEM and self._menu.measure(lparam):
+                return 1
+            if msg == WM_DRAWITEM and self._menu.draw(lparam):
+                return 1
             if msg == self._taskbar_created_msg:
                 self._added = False      # explorer restarted; re-add the icon
                 self._add()
