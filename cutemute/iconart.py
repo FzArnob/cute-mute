@@ -35,6 +35,21 @@ def _round_rect(px, py, half, radius):
     return math.hypot(max(dx, 0.0), max(dy, 0.0)) <= radius
 
 
+# Every number the badge is made of, in a 0..1 unit square, in one place. The
+# rasteriser below reads it; so does tools/make_brand.py, which writes the same
+# mark out as SVG for the website. Two renderers, one geometry, no drift.
+SHAPE = {
+    "plate":   {"half": 0.500, "radius": 0.300},
+    "fill":    {"half": 0.466, "radius": 0.278},
+    "capsule": {"seg": (0.5, 0.225, 0.5, 0.400), "width": 0.112},
+    "cradle":  {"centre": (0.5, 0.400), "inner": 0.170, "outer": 0.250,
+                "below": 0.430},
+    "stem":    {"seg": (0.5, 0.635, 0.5, 0.775), "width": 0.050},
+    "slash":   {"seg": (0.145, 0.800, 0.855, 0.200), "width": 0.062,
+                "cut": 0.148},
+}
+
+
 def _layers(muted):
     """Back-to-front list of (colour, inside-test) in a 0..1 unit square.
 
@@ -43,34 +58,39 @@ def _layers(muted):
     red smudge.
     """
     base, edge = (RED, RED_DARK) if muted else (GREEN, GREEN_DARK)
+    plate, fill = SHAPE["plate"], SHAPE["fill"]
+    capsule, cradle = SHAPE["capsule"], SHAPE["cradle"]
+    stem, slash = SHAPE["stem"], SHAPE["slash"]
+    cx, cy = cradle["centre"]
 
-    def plate(x, y):
-        return _round_rect(x, y, 0.500, 0.300)
+    def in_plate(x, y):
+        return _round_rect(x, y, plate["half"], plate["radius"])
 
-    def fill(x, y):
-        return _round_rect(x, y, 0.466, 0.278)
+    def in_fill(x, y):
+        return _round_rect(x, y, fill["half"], fill["radius"])
 
-    def capsule(x, y):
-        return _seg_dist(x, y, 0.5, 0.225, 0.5, 0.400) <= 0.112
+    def in_capsule(x, y):
+        return _seg_dist(x, y, *capsule["seg"]) <= capsule["width"]
 
-    def cradle(x, y):
-        return 0.170 <= math.hypot(x - 0.5, y - 0.400) <= 0.250 and y >= 0.430
+    def in_cradle(x, y):
+        return (cradle["inner"] <= math.hypot(x - cx, y - cy) <= cradle["outer"]
+                and y >= cradle["below"])
 
-    def stem(x, y):
-        return _seg_dist(x, y, 0.5, 0.635, 0.5, 0.775) <= 0.050
+    def in_stem(x, y):
+        return _seg_dist(x, y, *stem["seg"]) <= stem["width"]
 
     # A wide same-colour "cut" under the white slash keeps the stroke separated
     # from the mic instead of merging into one blob at small sizes.
-    def slash_cut(x, y):
-        return _seg_dist(x, y, 0.145, 0.800, 0.855, 0.200) <= 0.148
+    def in_slash_cut(x, y):
+        return _seg_dist(x, y, *slash["seg"]) <= slash["cut"]
 
-    def slash(x, y):
-        return _seg_dist(x, y, 0.145, 0.800, 0.855, 0.200) <= 0.062
+    def in_slash(x, y):
+        return _seg_dist(x, y, *slash["seg"]) <= slash["width"]
 
-    out = [(edge, plate), (base, fill), (WHITE, capsule), (WHITE, cradle),
-           (WHITE, stem)]
+    out = [(edge, in_plate), (base, in_fill), (WHITE, in_capsule),
+           (WHITE, in_cradle), (WHITE, in_stem)]
     if muted:
-        out += [(edge, slash_cut), (WHITE, slash)]
+        out += [(edge, in_slash_cut), (WHITE, in_slash)]
     return out
 
 

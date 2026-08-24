@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1" width="512" height="512" role="img" aria-label="CuteMute microphone badge, muted">
+  <title>CuteMute -- microphone muted</title>
+  <rect x="0.00000" y="0.00000" width="1.00000" height="1.00000" rx="0.30000" fill="#a31d22"/>
+  <rect x="0.03400" y="0.03400" width="0.93200" height="0.93200" rx="0.27800" fill="#e5484d"/>
+  <line x1="0.50000" y1="0.22500" x2="0.50000" y2="0.40000" stroke="#ffffff" stroke-width="0.22400" stroke-linecap="round"/>
+  <path d="M 0.29215 0.43000 A 0.21000 0.21000 0 0 0 0.70785 0.43000" fill="none" stroke="#ffffff" stroke-width="0.08000"/>
+  <line x1="0.50000" y1="0.63500" x2="0.50000" y2="0.77500" stroke="#ffffff" stroke-width="0.10000" stroke-linecap="round"/>
+  <line x1="0.14500" y1="0.80000" x2="0.85500" y2="0.20000" stroke="#a31d22" stroke-width="0.29600" stroke-linecap="round"/>
+  <line x1="0.14500" y1="0.80000" x2="0.85500" y2="0.20000" stroke="#ffffff" stroke-width="0.12400" stroke-linecap="round"/>
+</svg>
