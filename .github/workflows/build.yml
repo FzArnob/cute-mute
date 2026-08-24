@@ -1,0 +1,79 @@
+name: build
+
+# Every push and pull request: does it still compile, does the exe still come
+# out with its identity intact, and do the committed brand assets still match
+# the geometry they are generated from.
+
+on:
+  push:
+    branches: ["main"]
+    tags-ignore: ["**"]      # tags are the release workflow's business
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Compile every module
+        run: python -m compileall -q cutemute tools
+
+      # docs/assets is generated from cutemute.iconart.SHAPE. If someone moves
+      # the badge's geometry and forgets to re-run the generator, the website's
+      # logo silently stops being the app's icon. Regenerate and diff.
+      - name: Brand assets are up to date
+        run: |
+          python tools\make_brand.py
+          git diff --exit-code -- docs/assets
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::docs/assets is stale -- run: python tools\make_brand.py"
+            exit 1
+          }
+
+      - name: Icon is up to date
+        run: |
+          python tools\make_ico.py CuteMute.ico
+          git diff --exit-code -- CuteMute.ico
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::CuteMute.ico is stale -- run: python tools\make_ico.py CuteMute.ico"
+            exit 1
+          }
+
+      # The Store manifest is only exercised by the msix workflow, which runs
+      # on tags. A malformed template should not have to wait that long.
+      - name: Store manifest is well-formed
+        run: python tools\check_manifest.py
+
+      - name: Build the exe
+        run: |
+          python -m pip install --disable-pip-version-check --quiet pyinstaller
+          .\build.ps1
+
+      - name: Check what got built
+        run: |
+          $exe = Get-Item .\dist\CuteMute.exe
+          $info = $exe.VersionInfo
+          Write-Host ("size    : {0:N1} MB" -f ($exe.Length / 1MB))
+          Write-Host ("product : " + $info.ProductName + " " + $info.ProductVersion)
+          if ($info.ProductName -ne "CuteMute") {
+            Write-Host "::error::version resource missing or wrong"
+            exit 1
+          }
+
+      # Unsigned, and named so nobody mistakes it for a release download.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CuteMute-unsigned-${{ github.sha }}
+          path: dist/CuteMute.exe
+          if-no-files-found: error

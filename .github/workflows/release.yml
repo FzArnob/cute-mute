@@ -1,0 +1,234 @@
+name: release
+
+# Build CuteMute.exe on a clean Windows runner, sign it with Sigstore using
+# this workflow's own identity, and publish both to a GitHub release.
+#
+# The signature says something a signature made on my laptop cannot: *this
+# exact exe came out of this workflow, from this tag, in this repository*. There
+# is no private key anywhere -- not on a runner, not in a secret, not on my
+# machine -- so there is no key for anyone to steal or for you to have to trust.
+# What you trust instead is the public transparency log, which anyone can read.
+#
+# Sigstore does not quiet Windows SmartScreen; nothing but an Authenticode
+# certificate does. See the "Signing" section of README.md.
+
+on:
+  push:
+    tags: ["v*"]
+  # Build and sign without publishing, to exercise the pipeline without
+  # spending a version number. A dispatch run is on a branch, not a tag, so it
+  # has nothing to publish under; the signed exe comes back as an artifact.
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write   # create the release, upload the assets
+      id-token: write   # mint the OIDC token Sigstore signs against
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install the build and signing tools
+        run: |
+          python -m pip install --disable-pip-version-check --quiet pyinstaller sigstore
+          python -m sigstore --version
+
+      # A tag that disagrees with __version__ would ship an exe whose Properties
+      # dialog contradicts its own release page. Cheaper to catch here.
+      - name: Check the tag against cutemute/__init__.py
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart("v")
+          $pkg = python -c "import cutemute; print(cutemute.__version__)"
+          Write-Host "tag: $tag   package: $pkg"
+          if ($tag -ne $pkg) {
+            Write-Host "::error::tag v$tag does not match __version__ $pkg"
+            exit 1
+          }
+
+      - name: Build
+        run: .\build.ps1
+
+      # CuteMute.exe is a windowed-subsystem binary: it has no stdout to write
+      # to, so --version cannot be used as a smoke test. The version resource
+      # is the thing worth checking anyway, since that is what Properties, Task
+      # Manager and the installed-apps entry all read.
+      - name: Check what got built
+        run: |
+          $exe = Get-Item .\dist\CuteMute.exe
+          $info = $exe.VersionInfo
+          $pkg = python -c "import cutemute; print(cutemute.__version__)"
+          Write-Host ("size      : {0:N1} MB" -f ($exe.Length / 1MB))
+          Write-Host ("product   : " + $info.ProductName + " " + $info.ProductVersion)
+          Write-Host ("publisher : " + $info.CompanyName)
+          if ($exe.Length -lt 3MB) {
+            Write-Host "::error::dist\CuteMute.exe is implausibly small"
+            exit 1
+          }
+          if ($info.ProductName -ne "CuteMute") {
+            Write-Host "::error::version resource missing or wrong"
+            exit 1
+          }
+          if ($info.FileVersion -notlike "$pkg*") {
+            Write-Host "::error::exe reports $($info.FileVersion), package says $pkg"
+            exit 1
+          }
+
+      # ------------------------------------------------------------------ #
+      # Authenticode, free, via SignPath Foundation's OSS programme. This is
+      # the signature Windows itself reads, and the only thing that turns
+      # "Unknown publisher" into a name.
+      #
+      # Gated on the repository variables being set, so this workflow works
+      # unchanged before the application is approved -- and starts signing the
+      # moment it is, with no edit here. See CODE_SIGNING_POLICY.md.
+      #
+      # It must run BEFORE the Sigstore step: Authenticode rewrites the file,
+      # and Sigstore signs a hash of whatever it is given.
+      # ------------------------------------------------------------------ #
+
+      - name: Upload the unsigned exe for SignPath
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        id: unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: CuteMute-unsigned-for-signing
+          path: dist/CuteMute.exe
+          if-no-files-found: error
+
+      # SignPath requires a human to approve every release signing, so this
+      # step sits and waits for that. Half an hour, then it gives up.
+      - name: Authenticode-sign via SignPath Foundation
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 1800
+          output-artifact-directory: dist-signed
+
+      - name: Take the signed exe as the one we ship
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        run: |
+          $signed = Get-ChildItem -Recurse -Filter CuteMute.exe .\dist-signed |
+                    Select-Object -First 1
+          if (-not $signed) {
+            Write-Host "::error::SignPath returned no CuteMute.exe"
+            exit 1
+          }
+          Copy-Item $signed.FullName .\dist\CuteMute.exe -Force
+          $sig = Get-AuthenticodeSignature .\dist\CuteMute.exe
+          Write-Host ("status    : " + $sig.Status)
+          Write-Host ("publisher : " + $sig.SignerCertificate.Subject)
+          Write-Host ("issuer    : " + $sig.SignerCertificate.Issuer)
+          if ($sig.Status -ne "Valid") {
+            Write-Host "::error::signature does not validate: $($sig.Status)"
+            exit 1
+          }
+
+      - name: Sign with Sigstore
+        run: |
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          Copy-Item .\dist\CuteMute.exe .\release-assets\CuteMute.exe
+          python -m sigstore sign `
+            --bundle .\release-assets\CuteMute.exe.sigstore.json `
+            --overwrite `
+            .\release-assets\CuteMute.exe
+
+      # Verify what we just produced, with the same command the README tells
+      # people to run. If this step fails the release does not go out.
+      - name: Verify the signature
+        run: |
+          $identity = "https://github.com/$env:GITHUB_WORKFLOW_REF"
+          Write-Host "expecting identity: $identity"
+          python -m sigstore verify github `
+            --bundle .\release-assets\CuteMute.exe.sigstore.json `
+            --cert-identity $identity `
+            --repository "$env:GITHUB_REPOSITORY" `
+            .\release-assets\CuteMute.exe
+          "SIGSTORE_IDENTITY=$identity" >> $env:GITHUB_ENV
+
+      # Two spaces and an LF, no BOM: the format `sha256sum -c SHA256SUMS`
+      # expects. Out-File would give CRLF and glue \r onto the filename.
+      - name: Checksum
+        run: |
+          $hash = (Get-FileHash .\release-assets\CuteMute.exe -Algorithm SHA256).Hash.ToLower()
+          [IO.File]::WriteAllText(
+            (Join-Path $PWD "release-assets\SHA256SUMS"),
+            "$hash  CuteMute.exe`n",
+            (New-Object Text.UTF8Encoding $false))
+          Write-Host "sha256: $hash"
+          "SHA256=$hash" >> $env:GITHUB_ENV
+
+      # The notes live in .github/release-notes.md rather than inline here. A
+      # PowerShell here-string wants its terminator at column 0, and a YAML
+      # block scalar wants everything indented; you cannot have both.
+      # Say on the release page whether this build carries a publisher name, so
+      # the notes cannot promise a signature the exe does not have.
+      - name: Describe the Authenticode state
+        run: |
+          $sig = Get-AuthenticodeSignature .\release-assets\CuteMute.exe
+          if ($sig.Status -eq "Valid") {
+            $cn = ($sig.SignerCertificate.Subject -split "," |
+                   Where-Object { $_ -match "CN=" }) -replace ".*CN=", ""
+            $line = "**Authenticode-signed.** Windows shows the publisher as " +
+                    "``$($cn.Trim())`` rather than *Unknown publisher*."
+          } else {
+            $line = "**Not Authenticode-signed** ($($sig.Status)), so Windows " +
+                    "shows *Unknown publisher* and SmartScreen prompts on first " +
+                    "run. Nothing is wrong with the file; verify it below."
+          }
+          Write-Host $line
+          "AUTHENTICODE=$line" >> $env:GITHUB_ENV
+
+      - name: Write the release notes
+        run: |
+          $notes = Get-Content .github\release-notes.md -Raw
+          $notes = $notes.Replace("{{AUTHENTICODE}}", $env:AUTHENTICODE)
+          $notes = $notes.Replace("{{REPO}}",     $env:GITHUB_REPOSITORY)
+          $notes = $notes.Replace("{{TAG}}",      "${{ github.ref_name }}")
+          $notes = $notes.Replace("{{IDENTITY}}", $env:SIGSTORE_IDENTITY)
+          $notes = $notes.Replace("{{SHA256}}",   $env:SHA256)
+          $notes = $notes.Replace("{{SHA}}",      $env:GITHUB_SHA)
+          if ($notes -match "{{\w+}}") {
+            Write-Host "::error::unsubstituted placeholder in the release notes: $($Matches[0])"
+            exit 1
+          }
+          [IO.File]::WriteAllText((Join-Path $PWD "release-notes.md"), $notes,
+                                  (New-Object Text.UTF8Encoding $false))
+          Get-Content release-notes.md
+
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            --title "CuteMute ${{ github.ref_name }}" `
+            --notes-file release-notes.md `
+            --verify-tag `
+            .\release-assets\CuteMute.exe `
+            .\release-assets\CuteMute.exe.sigstore.json `
+            .\release-assets\SHA256SUMS
+
+      - name: Keep the signed build as an artifact too
+        uses: actions/upload-artifact@v4
+        with:
+          name: CuteMute-signed
+          path: release-assets/
+          if-no-files-found: error
