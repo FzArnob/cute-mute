@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CuteMute — Privacy policy</title>
+<meta name="description" content="CuteMute collects nothing, sends nothing, and has no way to do either. It makes no network connections of any kind.">
+<link rel="canonical" href="https://fzarnob.github.io/cute-mute/privacy.html">
+<meta name="theme-color" content="#0e0e10">
+<link rel="icon" href="assets/mark-muted.svg" type="image/svg+xml">
+<link rel="alternate icon" href="assets/icon-32.png" sizes="32x32">
+<style>
+:root {
+  --bg: #0e0e10; --tile: #1c1c20; --field: #16161a; --border: #3a3a42;
+  --text: #f3f3f5; --title: #e9e9ec; --dim: #8b8b94; --faint: #5a5a63;
+  --accent: #2f7ce8; --accent-hover: #3d88f0; --live-green: #2e9e68;
+  --ui: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", system-ui,
+        -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: "Cascadia Code", "Cascadia Mono", Consolas, ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: var(--ui); font-size: 17px; line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); text-decoration: underline; }
+header {
+  border-bottom: 1px solid var(--border); background: rgba(14,14,16,.8);
+  position: sticky; top: 0; backdrop-filter: blur(12px);
+}
+header .wrap { display: flex; align-items: center; gap: 11px; height: 60px; }
+header img { width: 25px; height: 25px; }
+header a.brand { color: var(--title); font-weight: 620; display: flex; align-items: center; gap: 11px; }
+header a.brand:hover { text-decoration: none; }
+header nav { margin-left: auto; font-size: 15px; }
+h1 { font-size: clamp(30px, 5vw, 42px); letter-spacing: -.02em; margin: 0; color: var(--title); }
+h2 {
+  font-size: 21px; letter-spacing: -.01em; color: var(--title);
+  margin: 52px 0 14px; padding-top: 22px; border-top: 1px solid var(--border);
+}
+p { margin: 0 0 1.1em; }
+.lede { font-size: 20px; color: var(--dim); margin-top: 18px; }
+.updated { color: var(--faint); font-size: 14px; margin-top: 10px; }
+main { padding: 64px 0 0; }
+footer {
+  margin-top: 76px; border-top: 1px solid var(--border);
+  padding: 32px 0 56px; color: var(--faint); font-size: 14.5px;
+}
+footer a { color: var(--dim); }
+code {
+  font-family: var(--mono); font-size: .88em; background: var(--field);
+  border: 1px solid var(--border); border-radius: 5px; padding: 1.5px 6px;
+  overflow-wrap: anywhere;
+}
+ul { padding-left: 22px; }
+li { margin-bottom: .5em; color: var(--dim); }
+li strong { color: var(--text); font-weight: 620; }
+.callout {
+  border: 1px solid var(--border); border-left: 3px solid var(--live-green);
+  background: rgba(46,158,104,.05); border-radius: 10px;
+  padding: 20px 24px; margin: 26px 0; color: var(--dim);
+}
+.callout strong { color: var(--text); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="./"><img src="assets/mark-muted.svg" alt="">CuteMute</a>
+    <nav><a href="./">Back to the app</a></nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Privacy policy</h1>
+  <p class="lede">CuteMute collects nothing, sends nothing, and has no way to do either.</p>
+  <p class="updated">Applies to CuteMute 1.0.0 and later, for the Microsoft Store package and the standalone <code>CuteMute.exe</code> alike.</p>
+
+  <h2>No network access</h2>
+  <p>
+    CuteMute makes no outbound connections of any kind. No telemetry, no
+    analytics, no update check, no crash reporting, no licence check, no
+    “anonymous usage statistics”. It contains no HTTP client and opens no
+    socket. The Store package declares no <code>internetClient</code>
+    capability, so Windows itself would prevent it even if the code tried.
+  </p>
+  <p>
+    This is not a policy that could quietly be reversed in a later build. Any
+    version that changed it would have to change this page too, and the commit
+    that did so would be public.
+  </p>
+
+  <h2>Keystrokes</h2>
+  <p>
+    CuteMute installs a low-level Windows keyboard hook. That is how a mute key
+    can work while another application has focus, and it means the program does
+    see keystrokes, so it is worth being exact about what happens to them.
+  </p>
+  <p>
+    Each keystroke is compared against your configured hotkey and then
+    discarded. Nothing is stored, buffered, logged, aggregated, or transmitted.
+    There is nowhere for it to go: the program has no network access, and the
+    only file it writes is the settings file below. The comparison lives in
+    <a href="https://github.com/FzArnob/cute-mute/blob/main/cutemute/hotkey.py"><code>cutemute/hotkey.py</code></a>,
+    which is deliberately short so that this claim can be checked rather than
+    merely believed.
+  </p>
+
+  <h2>Microphone</h2>
+  <p>
+    CuteMute sets and clears the mute flag on your capture devices through
+    Windows Core Audio. It never opens an audio stream, so it cannot record, and
+    there is no code in it that could.
+  </p>
+
+  <h2>What it stores, and where</h2>
+  <p>One file, on your machine only:</p>
+  <p><code>%APPDATA%\CuteMute\config.json</code></p>
+  <p>
+    It holds your settings — the hotkey, the badge's size, position and opacity,
+    and the handful of switches in the settings window. No identifiers. No
+    history of what you muted or when. No keystrokes. In the Store package this
+    file lives inside the app's own per-user storage, and uninstalling removes
+    it with the app.
+  </p>
+  <p>
+    The standalone <code>.exe</code> also writes three per-user entries so
+    Windows can find it — a Start menu shortcut, a Win+R name, and an
+    installed-apps entry — each containing only the program's path, name,
+    version and publisher. <code>CuteMute.exe --uninstall</code> removes all of
+    them. The Store package writes none of these; the package declares them
+    instead, and Windows removes them on uninstall.
+  </p>
+
+  <h2>Children</h2>
+  <p>
+    CuteMute is a general-purpose utility, is not directed at children, and
+    collects no personal information from anyone.
+  </p>
+
+  <h2>This website</h2>
+  <p>
+    This site is two static HTML files with no third-party scripts, no
+    analytics, no cookies, and no fonts or images loaded from other hosts. It is
+    served by GitHub Pages, and GitHub may log requests to it as described in
+    <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub's
+    privacy statement</a>. Downloads come from GitHub Releases, which GitHub
+    also logs.
+  </p>
+
+  <h2>Releases</h2>
+  <p>
+    Release signing writes a record to Sigstore's public transparency log. Those
+    records are permanent and public, and they identify the GitHub Actions
+    workflow that signed the release — not a person, and no email address. See
+    the <a href="https://github.com/FzArnob/cute-mute/blob/main/CODE_SIGNING_POLICY.md">code
+    signing policy</a>.
+  </p>
+
+  <div class="callout">
+    <strong>If you find anything in the source that contradicts this page,</strong>
+    that is both a bug and a security issue, and it is the most useful report
+    this project can receive. Please raise it as described in
+    <a href="https://github.com/FzArnob/cute-mute/blob/main/SECURITY.md">SECURITY.md</a>.
+  </div>
+
+  <h2>Contact</h2>
+  <p>
+    Questions about this policy:
+    <a href="https://github.com/FzArnob/cute-mute/issues">open an issue</a> on
+    the repository.
+  </p>
+</main>
+
+<footer>
+  <div class="wrap">
+    MIT licensed. Built by Fz's Lab. &nbsp;·&nbsp;
+    <a href="https://github.com/FzArnob/cute-mute">Source</a> &nbsp;·&nbsp;
+    <a href="./">CuteMute</a>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CuteMute — one key to mute your microphone</title>
+<meta name="description" content="A 10 MB Windows tray app that mutes your microphone with one keypress and puts a small always-on-top badge on screen while you are muted. Free, MIT, no dependencies.">
+<link rel="canonical" href="https://fzarnob.github.io/cute-mute/">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="CuteMute — one key to mute your microphone">
+<meta property="og:description" content="One keypress mutes your mic. A small badge sits on top of everything while it is muted, so you are never accidentally live.">
+<meta property="og:url" content="https://fzarnob.github.io/cute-mute/">
+<meta property="og:image" content="https://fzarnob.github.io/cute-mute/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0e0e10">
+
+<link rel="icon" href="assets/mark-muted.svg" type="image/svg+xml">
+<link rel="alternate icon" href="assets/icon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+
+<style>
+/* The palette is cutemute/theme.py, so the site and the app cannot disagree. */
+:root {
+  --bg: #0e0e10;
+  --tile: #1c1c20;
+  --tile-hover: #232329;
+  --field: #16161a;
+  --border: #3a3a42;
+  --border-hover: #55555f;
+  --text: #f3f3f5;
+  --title: #e9e9ec;
+  --dim: #8b8b94;
+  --faint: #5a5a63;
+  --accent: #2f7ce8;
+  --accent-hover: #3d88f0;
+  --muted-red: #e5484d;
+  --muted-red-dark: #a31d22;
+  --live-green: #2e9e68;
+  --warn: #d9a03a;
+
+  --ui: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI",
+        system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: "Cascadia Code", "Cascadia Mono", Consolas, "SF Mono",
+          ui-monospace, "Liberation Mono", monospace;
+
+  --page: 1080px;
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* A single wash of the badge's own red behind the hero, and nothing else:
+   the page has one accent colour and it is the colour of being muted. */
+body::before {
+  content: "";
+  position: absolute;
+  inset: -20% 0 auto 0;
+  height: 900px;
+  background:
+    radial-gradient(58% 46% at 50% 30%, rgba(229, 72, 77, 0.15), transparent 70%),
+    radial-gradient(38% 30% at 78% 6%, rgba(47, 124, 232, 0.09), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.wrap {
+  position: relative;
+  z-index: 1;
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+h1, h2, h3 { line-height: 1.2; letter-spacing: -0.02em; margin: 0; color: var(--title); }
+p { margin: 0 0 1em; }
+p:last-child { margin-bottom: 0; }
+
+.skip {
+  position: absolute; left: -9999px;
+  background: var(--tile); color: var(--text);
+  padding: 12px 18px; border-radius: 8px; z-index: 50;
+}
+.skip:focus { left: 24px; top: 16px; }
+
+/* ---------------------------------------------------------------- nav ---- */
+
+header.bar {
+  position: sticky; top: 0; z-index: 20;
+  backdrop-filter: blur(14px);
+  background: rgba(14, 14, 16, 0.76);
+  border-bottom: 1px solid rgba(58, 58, 66, 0.5);
+}
+header.bar .wrap {
+  display: flex; align-items: center; gap: 14px;
+  height: 62px;
+}
+.brand { display: flex; align-items: center; gap: 11px; font-weight: 620; letter-spacing: -0.01em; color: var(--title); }
+.brand:hover { text-decoration: none; }
+.brand img { width: 26px; height: 26px; display: block; }
+.bar nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.bar nav a {
+  color: var(--dim); padding: 7px 12px; border-radius: 8px;
+  font-size: 15px; font-weight: 500;
+}
+.bar nav a:hover { color: var(--text); background: var(--tile); text-decoration: none; }
+.bar .ghost { border: 1px solid var(--border); }
+
+/* --------------------------------------------------------------- hero ---- */
+
+.hero { padding: 86px 0 24px; text-align: center; }
+.hero > img {
+  width: 132px; height: 132px;
+  filter: drop-shadow(0 18px 44px rgba(229, 72, 77, 0.32));
+}
+.hero h1 {
+  font-size: clamp(46px, 8.5vw, 78px);
+  font-weight: 700;
+  margin: 30px 0 0;
+}
+.hero .tagline {
+  font-size: clamp(19px, 2.6vw, 25px);
+  color: var(--dim);
+  margin: 16px auto 0;
+  max-width: 30ch;
+  font-weight: 400;
+}
+.facts {
+  margin: 26px 0 0; padding: 0; list-style: none;
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 8px 10px;
+  font-size: 14px; color: var(--dim);
+}
+.facts li {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 13px;
+  background: rgba(28, 28, 32, 0.6);
+}
+
+.cta { margin-top: 38px; display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: inherit; font-size: 16px; font-weight: 600;
+  padding: 13px 24px; border-radius: 11px;
+  border: 1px solid transparent; cursor: pointer;
+  transition: background .12s, border-color .12s, transform .12s;
+}
+.btn:hover { text-decoration: none; transform: translateY(-1px); }
+.btn.primary { background: var(--accent); color: #fff; }
+.btn.primary:hover { background: var(--accent-hover); color: #fff; }
+.btn.secondary { background: var(--tile); color: var(--text); border-color: var(--border); }
+.btn.secondary:hover { background: var(--tile-hover); border-color: var(--border-hover); color: var(--text); }
+.btn svg { width: 17px; height: 17px; flex: none; }
+.under { margin-top: 14px; font-size: 14px; color: var(--faint); }
+.under a { color: var(--dim); text-decoration: underline; text-underline-offset: 2px; }
+
+/* --------------------------------------------------------- the demo ---- */
+
+.demo { margin: 76px 0 0; }
+.screen {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(150deg, #1b1d25 0%, #14151b 46%, #101116 100%);
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.55);
+}
+/* Something for the badge to sit on top of, so "on top of everything" reads
+   as a claim about layering rather than a decorative square. Two panes and a
+   title bar is enough suggestion of a window; any more and it competes with
+   the one 20 px thing the picture is actually about. */
+.screen .fake {
+  position: absolute; inset: 0 0 34px 0;
+  padding: 0; opacity: 0.55;
+  display: flex; flex-direction: column;
+}
+.screen .fake .chrome {
+  height: 34px; flex: none;
+  border-bottom: 1px solid rgba(58, 58, 66, 0.7);
+  display: flex; align-items: center; gap: 7px; padding-left: 16px;
+}
+.screen .fake .chrome b {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #3a3c46;
+}
+.screen .fake .body { flex: 1; display: flex; min-height: 0; }
+.screen .fake .side {
+  width: 27%; flex: none;
+  border-right: 1px solid rgba(58, 58, 66, 0.55);
+  padding: 20px 18px;
+  display: flex; flex-direction: column; gap: 13px;
+}
+.screen .fake .main {
+  flex: 1; padding: 22px 26px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.screen .fake i {
+  display: block; height: 9px; border-radius: 5px; flex: none;
+  background: linear-gradient(90deg, #40424e, #2a2c35);
+}
+.screen .fake .side i:nth-child(odd) { width: 82%; }
+.screen .fake .side i:nth-child(even) { width: 58%; }
+.screen .fake .main i:nth-child(1) { width: 42%; height: 13px; }
+.screen .fake .main i:nth-child(2) { width: 96%; }
+.screen .fake .main i:nth-child(3) { width: 88%; }
+.screen .fake .main i:nth-child(4) { width: 93%; }
+.screen .fake .main i:nth-child(5) { width: 61%; }
+.screen .fake .main i:nth-child(6) { width: 90%; }
+.screen .fake .main i:nth-child(7) { width: 74%; }
+
+.screen .taskbar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 34px;
+  background: rgba(9, 9, 11, 0.9);
+  border-top: 1px solid rgba(58, 58, 66, 0.6);
+  display: flex; align-items: center; justify-content: flex-end;
+  padding-right: 14px; gap: 10px;
+}
+.screen .taskbar img { width: 17px; height: 17px; display: block; }
+.screen .taskbar span { width: 15px; height: 6px; border-radius: 3px; background: #43454f; }
+
+#badge {
+  position: absolute;
+  right: 3.1%; bottom: 12.4%;
+  width: 5.4%;
+  aspect-ratio: 1;
+  transition: opacity .16s;
+}
+#badge.hidden { opacity: 0; }
+
+.controls {
+  margin-top: 20px;
+  display: flex; align-items: center; justify-content: center;
+  flex-wrap: wrap; gap: 14px;
+  font-size: 15px; color: var(--dim);
+}
+.keycap {
+  font-family: var(--mono); font-size: 15px; font-weight: 600;
+  color: var(--text); background: var(--field);
+  border: 1px solid var(--border); border-bottom-width: 3px;
+  border-radius: 8px; padding: 7px 17px; cursor: pointer;
+  transition: transform .08s, border-bottom-width .08s, background .12s;
+}
+.keycap:hover { background: var(--tile-hover); border-color: var(--border-hover); }
+.keycap:active { transform: translateY(2px); border-bottom-width: 1px; }
+#state { font-variant-numeric: tabular-nums; }
+#state b { color: var(--text); font-weight: 600; }
+
+/* ------------------------------------------------------------ layout ---- */
+
+section { padding: 84px 0 0; }
+.eyebrow {
+  font-size: 13px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--faint); margin: 0 0 12px;
+}
+section > .wrap > h2 { font-size: clamp(28px, 4vw, 38px); font-weight: 680; }
+.lede { color: var(--dim); max-width: 62ch; margin-top: 14px; font-size: 18px; }
+
+.grid {
+  margin-top: 34px;
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+}
+.card {
+  background: var(--tile);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+.card h3 { font-size: 17.5px; font-weight: 640; margin-bottom: 8px; }
+.card p { color: var(--dim); font-size: 15.5px; line-height: 1.6; }
+.card .num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 27px; height: 27px; border-radius: 8px;
+  background: var(--field); border: 1px solid var(--border);
+  font-family: var(--mono); font-size: 13px; color: var(--dim);
+  margin-bottom: 14px;
+}
+
+/* --------------------------------------------------------- code block --- */
+
+.code {
+  position: relative;
+  margin-top: 20px;
+  background: #0a0a0c;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.code .head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--field);
+  font-size: 13px; color: var(--dim);
+  font-family: var(--mono);
+}
+.code .head .grow { margin-left: auto; }
+.code pre {
+  margin: 0; padding: 18px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 14px; line-height: 1.75;
+  color: #dfe1e6;
+  tab-size: 2;
+}
+.code .c { color: var(--faint); }         /* comment */
+.code .k { color: #7fb2f2; }              /* command */
+.code .s { color: #c7a97a; }              /* string  */
+.code .f { color: #6fbf94; }              /* flag    */
+.copy {
+  font-family: var(--ui); font-size: 12.5px; font-weight: 600;
+  color: var(--dim); background: var(--tile);
+  border: 1px solid var(--border); border-radius: 7px;
+  padding: 4px 11px; cursor: pointer;
+}
+.copy:hover { color: var(--text); background: var(--tile-hover); border-color: var(--border-hover); }
+.copy.done { color: var(--live-green); border-color: var(--live-green); }
+
+/* ------------------------------------------------------------- notes ---- */
+
+.note {
+  margin-top: 22px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: 10px;
+  background: rgba(217, 160, 58, 0.05);
+  padding: 18px 22px;
+  font-size: 15.5px; color: var(--dim);
+}
+.note strong { color: var(--text); font-weight: 620; }
+.note.calm { border-left-color: var(--accent); background: rgba(47, 124, 232, 0.05); }
+
+kbd {
+  font-family: var(--mono); font-size: 0.88em;
+  background: var(--field); border: 1px solid var(--border);
+  border-radius: 5px; padding: 1.5px 6px; color: var(--text);
+}
+code:not(pre code) {
+  font-family: var(--mono); font-size: 0.9em;
+  background: var(--field); border: 1px solid var(--border);
+  border-radius: 5px; padding: 1.5px 6px; color: #dfe1e6;
+  overflow-wrap: anywhere;
+}
+
+table.spec {
+  width: 100%; margin-top: 26px;
+  border-collapse: collapse;
+  font-size: 15.5px;
+}
+table.spec th, table.spec td {
+  text-align: left; padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+table.spec th { color: var(--faint); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; }
+table.spec td:first-child { color: var(--text); white-space: nowrap; font-family: var(--mono); font-size: 14px; }
+table.spec td:last-child { color: var(--dim); }
+.scroller { overflow-x: auto; }
+
+/* ------------------------------------------------------------ footer ---- */
+
+footer {
+  margin-top: 96px;
+  border-top: 1px solid var(--border);
+  padding: 40px 0 56px;
+  color: var(--faint); font-size: 14.5px;
+}
+footer .wrap { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; }
+footer nav { margin-left: auto; display: flex; gap: 20px; flex-wrap: wrap; }
+footer a { color: var(--dim); }
+
+@media (max-width: 620px) {
+  body { font-size: 16px; }
+  .hero { padding-top: 54px; }
+  .bar nav a.hide { display: none; }
+  .card { padding: 20px; }
+  section { padding-top: 62px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition-duration: 0.01ms !important; }
+}
+</style>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="assets/mark-muted.svg" alt="">CuteMute</a>
+    <nav>
+      <a class="hide" href="#first-run">First run</a>
+      <a class="hide" href="#verify">Verify</a>
+      <a class="hide" href="#how">How it works</a>
+      <a class="ghost" href="https://github.com/FzArnob/cute-mute">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+<div id="top"></div>
+
+<div class="wrap hero">
+  <img src="assets/mark-muted.svg" alt="The CuteMute badge: a white crossed-out microphone on a red rounded square." width="132" height="132">
+  <h1>CuteMute</h1>
+  <p class="tagline">One keypress mutes your microphone. A badge on top of everything tells you it worked.</p>
+  <ul class="facts">
+    <li>Windows 10 &amp; 11</li>
+    <li>10 MB, one file</li>
+    <li>No installer</li>
+    <li>Zero dependencies</li>
+    <li>MIT</li>
+  </ul>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/FzArnob/cute-mute/releases/latest">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .75.75v6.44l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 1 1 1.06-1.06l2.22 2.22V2.25A.75.75 0 0 1 8 1.5ZM2.75 12a.75.75 0 0 1 .75.75v.75h9v-.75a.75.75 0 0 1 1.5 0v1.5a.75.75 0 0 1-.75.75h-10.5a.75.75 0 0 1-.75-.75v-1.5A.75.75 0 0 1 2.75 12Z"/></svg>
+      Download for Windows
+    </a>
+    <a class="btn secondary" href="https://github.com/FzArnob/cute-mute">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.34c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0 0 8 0Z"/></svg>
+      Source on GitHub
+    </a>
+  </div>
+  <p class="under">
+    Windows will warn you the first time. <a href="#first-run">Here is why, and what to do about it.</a>
+  </p>
+</div>
+
+<!-- ------------------------------------------------------------ demo -- -->
+
+<div class="wrap demo">
+  <div class="screen">
+    <div class="fake" aria-hidden="true">
+      <div class="chrome"><b></b><b></b><b></b></div>
+      <div class="body">
+        <div class="side"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="main"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+    </div>
+    <div class="taskbar" aria-hidden="true">
+      <img id="trayicon" src="assets/mark-muted.svg" alt="">
+      <span></span><span></span>
+    </div>
+    <img id="badge" src="assets/mark-muted.svg" alt="">
+  </div>
+  <div class="controls">
+    <button class="keycap" id="toggle" type="button">Tab</button>
+    <span id="state">Microphone is <b>muted</b>. The badge sits in the corner, above every window.</span>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------- first run -- -->
+
+<section id="first-run">
+  <div class="wrap">
+    <p class="eyebrow">First run</p>
+    <h2>Yes, Windows will warn you</h2>
+    <p class="lede">
+      CuteMute carries no Authenticode certificate, so SmartScreen shows
+      <em>“Windows protected your PC”</em> and Windows calls the publisher
+      unknown. That message is about a missing certificate and a missing download
+      count. It is not a virus warning, and it is not a claim that anything was
+      found.
+    </p>
+    <p class="lede">
+      Two free routes out of this exist, and both are built. The
+      <strong>Microsoft Store</strong> package installs under a real publisher
+      name with no prompt at all, because Microsoft signs what it distributes.
+      And <a href="https://signpath.org/">SignPath Foundation</a> signs
+      open-source releases with a real certificate at no cost, which the release
+      pipeline is already wired for. Both are waiting on a review by someone
+      other than me; until then this page tells you the truth about the file, and
+      every release says plainly whether that build is signed.
+    </p>
+
+    <div class="grid">
+      <div class="card">
+        <span class="num">1</span>
+        <h3>More info</h3>
+        <p>The dialog hides its own Run button. Click <strong>More info</strong> and it appears, along with the app and publisher name that CuteMute stamps into its own version resource.</p>
+      </div>
+      <div class="card">
+        <span class="num">2</span>
+        <h3>Run anyway</h3>
+        <p>Once is enough. Windows remembers the choice for that copy of the file, and CuteMute starts, shows its window, and adds itself to the Start menu.</p>
+      </div>
+      <div class="card">
+        <span class="num">3</span>
+        <h3>Or skip the dialog</h3>
+        <p>The prompt is triggered by the “downloaded from the internet” tag your browser attaches. Verify the file first, then remove the tag: <code>Unblock-File .\CuteMute.exe</code></p>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>Do not just click through it, on anything.</strong> “Run anyway” is a
+      real decision, and a page telling you to make it is exactly what a malicious
+      page would also say. Do the thirty seconds of
+      <a href="#verify">verification</a> below instead. Then the prompt is only
+      about a certificate CuteMute does not have — which you already knew.
+    </div>
+  </div>
+</section>
+
+<!-- ---------------------------------------------------------- verify -- -->
+
+<section id="verify">
+  <div class="wrap">
+    <p class="eyebrow">Verify</p>
+    <h2>Check the download before you trust it</h2>
+    <p class="lede">
+      Every release is signed with <a href="https://www.sigstore.dev/">Sigstore</a>
+      by the GitHub Actions workflow that built it. There is no private key
+      anywhere — not on a runner, not in a repository secret, not on a laptop — so
+      there is no key to be stolen and none for you to have to trust. What you
+      check instead is a public transparency log that anyone can read.
+    </p>
+
+    <div class="code">
+      <div class="head"><span>PowerShell</span><span class="grow"></span><button class="copy" type="button">Copy</button></div>
+<pre><span class="k">python</span> -m pip install <span class="s">sigstore</span>
+
+<span class="k">python</span> -m sigstore verify github <span class="s">CuteMute.exe</span> `
+  <span class="f">--bundle</span> <span class="s">CuteMute.exe.sigstore.json</span> `
+  <span class="f">--cert-identity</span> <span class="s">"https://github.com/FzArnob/cute-mute/.github/workflows/release.yml@refs/tags/v1.0.0"</span> `
+  <span class="f">--repository</span> <span class="s">FzArnob/cute-mute</span></pre>
+    </div>
+
+    <p style="margin-top:20px;color:var(--dim)">
+      Download <code>CuteMute.exe.sigstore.json</code> from the same release, put
+      it beside the exe, and run that. A line reading <code>OK</code> is a proof of
+      four things at once:
+    </p>
+
+    <div class="grid">
+      <div class="card">
+        <h3>It is unmodified</h3>
+        <p>The signature covers a hash of the exe. One flipped byte anywhere and verification fails.</p>
+      </div>
+      <div class="card">
+        <h3>A workflow built it</h3>
+        <p>The identity is a file path in this repository. Not a person, not a key — a build script you can read.</p>
+      </div>
+      <div class="card">
+        <h3>From that tag</h3>
+        <p>The identity ends in the git ref. Change the tag in the command and it stops matching.</p>
+      </div>
+      <div class="card">
+        <h3>Publicly, at that time</h3>
+        <p>The signature is in Sigstore's transparency log. It cannot be created quietly or removed later.</p>
+      </div>
+    </div>
+
+    <p style="margin-top:26px;color:var(--dim)">
+      Swap the tag in <code>--cert-identity</code> for whichever version you
+      downloaded — each release page carries the exact command. If you would
+      rather just compare a hash, every release also ships
+      <code>SHA256SUMS</code>:
+    </p>
+
+    <div class="code">
+      <div class="head"><span>PowerShell</span><span class="grow"></span><button class="copy" type="button">Copy</button></div>
+<pre>(<span class="k">Get-FileHash</span> <span class="s">CuteMute.exe</span> <span class="f">-Algorithm</span> SHA256).Hash.ToLower()
+<span class="c"># compare with the line in SHA256SUMS</span></pre>
+    </div>
+
+    <div class="note calm">
+      <strong>Sigstore does not silence SmartScreen.</strong> Windows only reads
+      Authenticode signatures, and a Sigstore bundle is a separate file Windows
+      never looks at. What it gives you is a way to know exactly what you
+      downloaded — which is the part a certificate does not actually tell you.
+    </div>
+  </div>
+</section>
+
+<!-- -------------------------------------------------------- features -- -->
+
+<section id="features">
+  <div class="wrap">
+    <p class="eyebrow">What it does</p>
+    <h2>A mute key, and proof that it worked</h2>
+    <p class="lede">
+      The badge is the point. Muting is easy; knowing whether you are muted is
+      the part every meeting gets wrong.
+    </p>
+
+    <div class="grid">
+      <div class="card">
+        <h3>One key, anywhere</h3>
+        <p>A low-level keyboard hook, so it works while any app has focus. <kbd>Tab</kbd> by default; pick anything, including <kbd>F13</kbd> or a chord.</p>
+      </div>
+      <div class="card">
+        <h3>Watches, or swallows</h3>
+        <p>By default the key still reaches the app underneath, so <kbd>Tab</kbd> keeps indenting. Flip one switch and CuteMute keeps it to itself.</p>
+      </div>
+      <div class="card">
+        <h3>A 20 px badge, always on top</h3>
+        <p>A layered window with per-pixel alpha — genuinely anti-aliased, click-through, never steals focus, never appears in Alt+Tab.</p>
+      </div>
+      <div class="card">
+        <h3>Both default mics</h3>
+        <p>Windows keeps a console default and a communications default. They are often the same device. When they are not, one keypress still silences both.</p>
+      </div>
+      <div class="card">
+        <h3>Nothing to save</h3>
+        <p>Settings write themselves a quarter-second after you stop fiddling and take effect immediately. There is no Save button to forget.</p>
+      </div>
+      <div class="card">
+        <h3>Flat-zero idle CPU</h3>
+        <p>Four threads, each blocked on something the kernel wakes it for. Measured at 0 ms over 15 seconds — below the clock's own granularity.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------ how -- -->
+
+<section id="how">
+  <div class="wrap">
+    <p class="eyebrow">How it works</p>
+    <h2>The realtime path is short on purpose</h2>
+    <p class="lede">
+      If a low-level keyboard hook takes longer than 300 ms, Windows silently
+      tears it down — and a slow hook delays every keystroke on the machine, in
+      every application. So the hook callback compares a few integers, pushes to
+      a queue, and returns. Audio, COM and the badge all happen after the fact.
+    </p>
+
+    <div class="code">
+      <div class="head"><span>the toggle, end to end</span></div>
+<pre>hook callback  <span class="c">-&gt;</span>  queue.put_nowait  <span class="c">-&gt;</span>  audio thread  <span class="c">-&gt;</span>  IAudioEndpointVolume::SetMute
+<span class="c">   (integer compares only)                                    (~3 ms, measured)</span></pre>
+    </div>
+
+    <div class="scroller">
+    <table class="spec">
+      <thead><tr><th>Measured</th><th></th></tr></thead>
+      <tbody>
+        <tr><td>Idle CPU</td><td>0 ms over 15 s — below the 15.6 ms clock granularity</td></tr>
+        <tr><td>Working set</td><td>~25 MB, of which ~12 MB private</td></tr>
+        <tr><td>Mute latency</td><td>~3 ms for the Core Audio call; hook overhead is sub-millisecond</td></tr>
+        <tr><td>Dependencies</td><td>none — stdlib Python and direct Win32/COM calls through <code>ctypes</code></td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <p style="margin-top:30px;color:var(--dim)">
+      No pycaw, no comtypes, no Pillow. Core Audio is called through its COM
+      vtables directly, in about eighty lines. The icon you have been looking at
+      is rasterised in code from signed-distance tests, which is why the overlay,
+      the tray icon, the <code>.ico</code>, and the logo on this page are all the
+      same drawing at different sizes.
+      <a href="https://github.com/FzArnob/cute-mute#how-it-works">The full write-up is in the README.</a>
+    </p>
+  </div>
+</section>
+
+<!-- --------------------------------------------------------- get it -- -->
+
+<section id="get">
+  <div class="wrap" style="text-align:center">
+    <img src="assets/mark-live.svg" alt="" width="72" height="72" style="opacity:.95">
+    <h2 style="margin-top:22px">Stop wondering whether you are muted</h2>
+    <p class="lede" style="margin:14px auto 0">
+      One file, no installer, nothing running that you did not put there.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/FzArnob/cute-mute/releases/latest">Download the latest release</a>
+      <a class="btn secondary" href="#verify">Verify it first</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>MIT licensed. Built by Fz's Lab.</span>
+    <nav>
+      <a href="https://github.com/FzArnob/cute-mute">Source</a>
+      <a href="https://github.com/FzArnob/cute-mute/releases">Releases</a>
+      <a href="https://github.com/FzArnob/cute-mute/issues">Report a bug</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="https://github.com/FzArnob/cute-mute/blob/main/LICENSE">Licence</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* The demo. Both marks are the generated SVGs, so this toggle shows the
+     actual artwork the app draws, not an approximation of it. */
+  var badge = document.getElementById("badge");
+  var tray = document.getElementById("trayicon");
+  var state = document.getElementById("state");
+  var button = document.getElementById("toggle");
+  var muted = true;
+
+  function paint() {
+    var mark = muted ? "assets/mark-muted.svg" : "assets/mark-live.svg";
+    tray.src = mark;
+    badge.src = mark;
+    badge.classList.toggle("hidden", !muted);
+    state.innerHTML = muted
+      ? "Microphone is <b>muted</b>. The badge sits in the corner, above every window."
+      : "Microphone is <b>live</b>. No badge — it only shows while you are muted.";
+  }
+
+  button.addEventListener("click", function () {
+    muted = !muted;
+    paint();
+  });
+
+  /* Copy buttons. Pulls the text out of the <pre> rather than a duplicated
+     string, so the button and the block can never drift apart. */
+  Array.prototype.forEach.call(document.querySelectorAll(".copy"), function (btn) {
+    btn.addEventListener("click", function () {
+      var pre = btn.closest(".code").querySelector("pre");
+      var done = function () {
+        btn.textContent = "Copied";
+        btn.classList.add("done");
+        setTimeout(function () {
+          btn.textContent = "Copy";
+          btn.classList.remove("done");
+        }, 1600);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(pre.innerText).then(done, function () {
+          btn.textContent = "Select it instead";
+        });
+      } else {
+        var range = document.createRange();
+        range.selectNodeContents(pre);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        btn.textContent = "Selected — press Ctrl+C";
+      }
+    });
+  });
+}());
+</script>
+</body>
+</html>
