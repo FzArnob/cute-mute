@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  CuteMute, as an MSIX package for the Microsoft Store.
+
+  Template. tools/make_msix.ps1 substitutes the double-braced placeholders and
+  writes the result into the staged package; this file is never packed as-is.
+
+  The three Identity values are not cosmetic and cannot be guessed: they are
+  assigned by Partner Center once the app name is reserved, and a package whose
+  Identity does not match the reservation exactly is rejected at submission.
+  Find them under Product > Product identity. See STORE_SUBMISSION.md.
+
+  EntryPoint="Windows.FullTrustApplication" plus the runFullTrust capability is
+  what makes this a packaged desktop app rather than a sandboxed UWP one. It
+  matters here: CuteMute installs a WH_KEYBOARD_LL hook and talks to Core Audio
+  through COM, and neither is available to an app in the UWP sandbox.
+-->
+
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap5 desktop rescap">
+
+  <Identity
+    Name="{{IDENTITY_NAME}}"
+    Publisher="{{IDENTITY_PUBLISHER}}"
+    Version="{{VERSION}}"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>{{DISPLAY_NAME}}</DisplayName>
+    <PublisherDisplayName>{{PUBLISHER_DISPLAY_NAME}}</PublisherDisplayName>
+    <Description>{{DESCRIPTION}}</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <!-- 10.0.19041 is Windows 10 2004: the floor for a current MSIX toolchain,
+         and comfortably below anything still receiving updates. -->
+    <TargetDeviceFamily
+      Name="Windows.Desktop"
+      MinVersion="10.0.19041.0"
+      MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application
+      Id="CuteMute"
+      Executable="CuteMute.exe"
+      EntryPoint="Windows.FullTrustApplication">
+
+      <uap:VisualElements
+        DisplayName="{{DISPLAY_NAME}}"
+        Description="{{DESCRIPTION}}"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        BackgroundColor="#0E0E10">
+        <!-- The badge assets carry their own red plate and transparent margin,
+             so the tile background is the app's own window colour rather than
+             an accent that would fight with it. -->
+        <uap:DefaultTile
+          Wide310x150Logo="Assets\Wide310x150Logo.png"
+          Square310x310Logo="Assets\Square310x310Logo.png"
+          Square71x71Logo="Assets\Square71x71Logo.png"
+          ShortName="{{DISPLAY_NAME}}">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo" />
+            <uap:ShowOn Tile="wide310x150Logo" />
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+      </uap:VisualElements>
+
+      <Extensions>
+        <!-- Run at login. Inside a package the Run key is virtualised and a
+             write there is silently discarded, so this is the only route that
+             works; it puts the switch in Settings > Apps > Startup, where
+             Windows owns it. Enabled="false" so an install does not quietly
+             add itself to startup — the user turns it on.
+
+             It points at CuteMuteTray.exe, a copy of the same binary. The
+             startupTask extension takes no arguments, and logging in is not a
+             request to see the settings window, so the app reads its own
+             filename to decide: see cutemute/app.py. -->
+        <desktop:Extension
+          Category="windows.startupTask"
+          Executable="CuteMuteTray.exe"
+          EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask
+            TaskId="CuteMuteStartup"
+            Enabled="false"
+            DisplayName="{{DISPLAY_NAME}}" />
+        </desktop:Extension>
+
+        <!-- `CuteMute` from a terminal or Win+R. The loose build gets this from
+             an App Paths registry key, which a package cannot write; this is
+             the packaged equivalent. -->
+        <uap5:Extension Category="windows.appExecutionAlias">
+          <uap5:AppExecutionAlias>
+            <uap5:ExecutionAlias Alias="CuteMute.exe" />
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Everything CuteMute does needs desktop privileges and nothing else. No
+         internet capability is declared, because it makes no network
+         connections of any kind — see PRIVACY.md. -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

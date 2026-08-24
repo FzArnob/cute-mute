@@ -18,8 +18,10 @@ import ctypes
 import queue
 import sys
 import threading
+from pathlib import Path
 
-from . import APP_NAME, PUBLISHER, __version__, config, install, keys, startup
+from . import (APP_NAME, PUBLISHER, __version__, config, install, keys,
+               packaged, startup)
 from .audio import AudioService, COINIT_MULTITHREADED, MicMute
 from .hotkey import HotkeyListener
 from .settings_ui import SettingsWindow
@@ -148,6 +150,9 @@ class App:
         elif command == "settings":
             self.request_settings()
         elif command == "startup":
+            if startup.managed_by_windows():
+                packaged.open_startup_settings()
+                return
             wanted = not self.cfg["start_with_windows"]
             if startup.set_enabled(wanted):
                 self.cfg["start_with_windows"] = wanted
@@ -281,6 +286,21 @@ def _beep(muted):
         pass
 
 
+STARTUP_COPY = "cutemutetray"
+
+
+def _launched_as_startup_copy():
+    """True when this process is the package's CuteMuteTray.exe.
+
+    See the windows.startupTask extension in packaging/msix/AppxManifest.xml.
+    A no-op for the loose exe, which is never named that.
+    """
+    try:
+        return Path(sys.executable).stem.lower() == STARTUP_COPY
+    except Exception:
+        return False
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="CuteMute",
@@ -300,6 +320,12 @@ def main(argv=None):
     parser.add_argument("--version", action="version",
                         version="%s %s" % (APP_NAME, __version__))
     args = parser.parse_args(argv)
+
+    # The MSIX startup task cannot pass arguments, so the packaged build ships a
+    # second copy of this same binary under another name and lets the filename
+    # carry the intent. Logging in is not a request to see the settings window.
+    if not args.tray and _launched_as_startup_copy():
+        args.tray = True
 
     if args.uninstall:
         return _uninstall()

@@ -20,7 +20,7 @@ import queue
 import sys
 import tkinter as tk
 
-from . import keys, paint
+from . import keys, paint, startup
 from .theme import (ACCENT, ACCENT_HOVER, BG, BORDER, BORDER_HOVER, CAPTION,
                     CAPTION_HOVER, CLOSE_HOVER, CTRL, CTRL_DOWN, CTRL_HOVER,
                     CTRL_ON, DIM, FAINT, FIELD, KNOB_OFF, KNOB_ON, SECTION,
@@ -597,7 +597,15 @@ class SettingsWindow:
         y = self._section(y, "Behaviour")
         y = self._switch_row(y, "Mute every input device", "mute_all")
         y = self._switch_row(y, "Play a short beep when toggling", "beep")
-        y = self._switch_row(y, "Start CuteMute with Windows", "startup")
+        if startup.managed_by_windows():
+            # A Store install's startup entry is Windows', not ours -- see
+            # cutemute/packaged.py. A switch here could only lie.
+            y = self._managed_row(
+                y, "Start CuteMute with Windows",
+                "Windows manages this for Store installs — "
+                "Settings › Apps › Startup")
+        else:
+            y = self._switch_row(y, "Start CuteMute with Windows", "startup")
 
         return self._status_row(y + self.s(4))
 
@@ -701,6 +709,20 @@ class SettingsWindow:
         if caption:
             self._refresh_caption()
         return y + self.s(height) + self.s(GAP)
+
+    def _managed_row(self, y, title, caption):
+        """A row with no control, because the setting is not ours to set.
+
+        Deliberately inert. The tray menu's "Start with Windows..." item
+        opens the Settings page; a switch drawn here would have to either
+        do nothing or guess at a state it cannot read.
+        """
+        self._tile(y, ROW_CAPTION)
+        self._text(self.s(PAD + INSET), y + self.s(14), title,
+                   self.font(13, "semibold"), DIM)
+        self._text(self.s(PAD + INSET), y + self.s(34), caption,
+                   self.font(11), FAINT)
+        return y + self.s(ROW_CAPTION) + self.s(GAP)
 
     def _stepper_row(self, y, title, attr, lo, hi, step, unit):
         self._tile(y, ROW)

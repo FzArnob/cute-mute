@@ -1,0 +1,107 @@
+name: msix
+
+# Build the Microsoft Store package.
+#
+# This is the reference build: windows-latest carries the Windows SDK, so
+# makeappx.exe is present without anyone installing anything. The result is an
+# *unsigned* .msix, which is what Partner Center wants -- Microsoft re-signs the
+# package with its own certificate during ingestion, and that is precisely why a
+# Store install shows your publisher name and raises no SmartScreen prompt.
+#
+# The three Identity values come from Partner Center once the app name is
+# reserved. Set them as repository variables and this produces a submittable
+# package; without them it still builds, but only as something to install
+# locally and check. See STORE_SUBMISSION.md.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "packaging/**"
+      - "tools/make_msix.ps1"
+      - "tools/make_msix_assets.py"
+      - ".github/workflows/msix.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install PyInstaller
+        run: python -m pip install --disable-pip-version-check --quiet pyinstaller
+
+      # packaging/msix/Assets is generated from cutemute.iconart.SHAPE. If the
+      # badge moves and nobody re-runs the generator, the Store listing quietly
+      # keeps shipping the old icon.
+      - name: Package assets are up to date
+        run: |
+          python tools\make_msix_assets.py
+          git diff --exit-code -- packaging/msix/Assets
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::packaging/msix/Assets is stale -- run: python tools\make_msix_assets.py"
+            exit 1
+          }
+
+      - name: Pack
+        run: |
+          $args = @{}
+          if ("${{ vars.STORE_IDENTITY_NAME }}") {
+            $args["IdentityName"] = "${{ vars.STORE_IDENTITY_NAME }}"
+            $args["IdentityPublisher"] = "${{ vars.STORE_IDENTITY_PUBLISHER }}"
+            $args["PublisherDisplayName"] = "${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}"
+            Write-Host "building a submittable package for ${{ vars.STORE_IDENTITY_NAME }}"
+          } else {
+            Write-Host "::warning::STORE_IDENTITY_NAME is not set -- building with placeholder identity, which Partner Center will reject. See STORE_SUBMISSION.md."
+          }
+          .\tools\make_msix.ps1 @args
+
+      - name: Check the package
+        run: |
+          $msix = Get-Item .\dist\CuteMute.msix
+          Write-Host ("size    : {0:N1} MB" -f ($msix.Length / 1MB))
+          if ($msix.Length -lt 4MB) {
+            Write-Host "::error::CuteMute.msix is implausibly small"
+            exit 1
+          }
+          # A .msix is a zip. Read the manifest back out of it rather than
+          # trusting the staging directory we just built.
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [IO.Compression.ZipFile]::OpenRead($msix.FullName)
+          try {
+            $names = $zip.Entries | ForEach-Object { $_.FullName }
+            foreach ($required in @("AppxManifest.xml", "CuteMute.exe",
+                                    "CuteMuteTray.exe", "Assets/StoreLogo.png")) {
+              if ($names -notcontains $required) {
+                Write-Host "::error::package is missing $required"
+                exit 1
+              }
+            }
+            Write-Host ("entries : {0}" -f $names.Count)
+            $entry = $zip.Entries | Where-Object { $_.FullName -eq "AppxManifest.xml" }
+            $reader = New-Object IO.StreamReader($entry.Open())
+            $xml = [xml]$reader.ReadToEnd()
+            $reader.Close()
+            Write-Host ("identity: " + $xml.Package.Identity.Name)
+            Write-Host ("version : " + $xml.Package.Identity.Version)
+            Write-Host ("shown as: " + $xml.Package.Properties.PublisherDisplayName)
+          } finally {
+            $zip.Dispose()
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CuteMute-msix
+          path: dist/CuteMute.msix
+          if-no-files-found: error

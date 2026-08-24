@@ -8,6 +8,7 @@ import ctypes
 import threading
 from ctypes import byref
 
+from . import startup
 from .menu import DarkMenu, Item
 from .w32 import (NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE,
                   NIM_MODIFY, NOTIFYICONDATAW, SM_CXSMICON, WM_APP, WM_COMMAND,
@@ -145,8 +146,13 @@ class Tray:
             Item(ID_OPEN, "Open"),
             Item(ID_TOGGLE, "Unmute Microphone" if muted
                  else "Mute Microphone", self._hotkey_text()),
-            Item(ID_STARTUP, "Start with Windows", "",
-                 bool(self._cfg.get("start_with_windows"))),
+            # In a package the switch belongs to Settings > Apps > Startup,
+            # so the item opens that instead of pretending to be a toggle.
+            Item(ID_STARTUP,
+                 "Start with Windows..." if startup.managed_by_windows()
+                 else "Start with Windows", "",
+                 (not startup.managed_by_windows())
+                 and bool(self._cfg.get("start_with_windows"))),
             Item(ID_EXIT, "Exit CuteMute"),
         )
         command = COMMANDS.get(self._menu.show(self.hwnd, items,

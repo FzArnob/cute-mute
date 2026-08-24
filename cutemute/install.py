@@ -23,7 +23,7 @@ import winreg
 from ctypes import POINTER, byref, c_int, c_void_p, c_wchar_p, wintypes
 
 from . import (APP_NAME, DESCRIPTION, PUBLISHER, TAGLINE, __version__, config,
-               startup)
+               packaged, startup)
 from .w32 import (CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, GUID,
                   com_call, com_release, ole32)
 
@@ -173,6 +173,10 @@ def register():
     Never raises: being missing from Start is a blemish, not a reason to refuse
     to mute a microphone.
     """
+    if packaged.is_packaged():
+        # The manifest already declares every one of these, and a package
+        # cannot write outside itself anyway. Uninstall is the Store's job.
+        return False
     try:
         program, arguments = startup.launch_parts(tray=False)
         if _up_to_date(program):
